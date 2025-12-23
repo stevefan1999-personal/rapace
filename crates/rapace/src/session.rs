@@ -13,7 +13,7 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 use rapace_core::{
     ControlPayload, ErrorCode, Frame, FrameFlags, MsgDescHot, NO_DEADLINE, RpcError, Transport,
-    TransportError, control_method,
+    TransportBackend, TransportError, control_method,
 };
 
 /// Default initial credits for new channels (64KB).

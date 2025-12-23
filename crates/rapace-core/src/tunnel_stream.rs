@@ -13,7 +13,7 @@ use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::sync::mpsc;
 
 use crate::session::RpcSession;
-use crate::{RpcError, TunnelChunk, parse_error_payload};
+use crate::{RpcError, TransportBackend, TunnelChunk, parse_error_payload};
 
 /// A handle identifying a tunnel channel.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -26,9 +26,9 @@ pub struct TunnelHandle {
 /// - Reads consume incoming tunnel chunks from `RpcSession::register_tunnel`.
 /// - Writes send outgoing tunnel chunks via `RpcSession::send_chunk`.
 /// - `poll_shutdown` sends an EOS via `RpcSession::close_tunnel`.
-pub struct TunnelStream {
+pub struct TunnelStream<Transport: TransportBackend> {
     channel_id: u32,
-    session: Arc<RpcSession>,
+    session: Arc<RpcSession<Transport>>,
     rx: mpsc::Receiver<TunnelChunk>,
 
     read_buf: Bytes,
@@ -46,11 +46,11 @@ pub struct TunnelStream {
 type PendingSend =
     Pin<Box<dyn std::future::Future<Output = Result<(), RpcError>> + Send + 'static>>;
 
-impl TunnelStream {
+impl<Transport: TransportBackend> TunnelStream<Transport> {
     /// Create a new tunnel stream for an existing `channel_id`.
     ///
     /// This registers a tunnel receiver immediately, so the peer can start sending.
-    pub fn new(session: Arc<RpcSession>, channel_id: u32) -> Self {
+    pub fn new(session: Arc<RpcSession<Transport>>, channel_id: u32) -> Self {
         let rx = session.register_tunnel(channel_id);
         tracing::debug!(channel_id, "tunnel stream created");
         Self {
@@ -70,7 +70,7 @@ impl TunnelStream {
     }
 
     /// Allocate a fresh tunnel channel ID and return a stream for it.
-    pub fn open(session: Arc<RpcSession>) -> (TunnelHandle, Self) {
+    pub fn open(session: Arc<RpcSession<Transport>>) -> (TunnelHandle, Self) {
         let channel_id = session.next_channel_id();
         tracing::debug!(channel_id, "tunnel stream open");
         let stream = Self::new(session, channel_id);
@@ -82,7 +82,7 @@ impl TunnelStream {
     }
 }
 
-impl Drop for TunnelStream {
+impl<Transport: TransportBackend> Drop for TunnelStream<Transport> {
     fn drop(&mut self) {
         tracing::debug!(
             channel_id = self.channel_id,
@@ -106,7 +106,7 @@ impl Drop for TunnelStream {
     }
 }
 
-impl AsyncRead for TunnelStream {
+impl<Transport: TransportBackend> AsyncRead for TunnelStream<Transport> {
     fn poll_read(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,
@@ -200,7 +200,7 @@ impl AsyncRead for TunnelStream {
     }
 }
 
-impl AsyncWrite for TunnelStream {
+impl<Transport: TransportBackend> AsyncWrite for TunnelStream<Transport> {
     fn poll_write(
         mut self: Pin<&mut Self>,
         cx: &mut Context<'_>,

@@ -85,7 +85,7 @@ use tokio::sync::{mpsc, oneshot};
 
 use crate::{
     ErrorCode, Frame, FrameFlags, INLINE_PAYLOAD_SIZE, MsgDescHot, RpcError, Transport,
-    TransportError,
+    TransportBackend, TransportError,
 };
 
 const DEFAULT_MAX_PENDING: usize = 8192;
@@ -162,7 +162,7 @@ pub type BoxedDispatcher = Box<
 /// Only `RpcSession::run()` calls `transport.recv_frame()`. No other code should
 /// touch `recv_frame` directly. This prevents the race condition where multiple
 /// callers compete for incoming frames.
-pub struct RpcSession {
+pub struct RpcSession<Transport: TransportBackend> {
     transport: Transport,
 
     /// Pending response waiters: channel_id -> oneshot sender.
@@ -187,7 +187,7 @@ pub struct RpcSession {
     next_channel_id: AtomicU32,
 }
 
-impl RpcSession {
+impl<Transport: TransportBackend> RpcSession<Transport> {
     /// Create a new RPC session wrapping the given transport handle.
     ///
     /// The `start_channel_id` parameter allows different sessions to use different
@@ -378,7 +378,9 @@ impl RpcSession {
     ///
     /// This is a convenience wrapper around `next_channel_id()` + `register_tunnel()`.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn open_tunnel_stream(self: &Arc<Self>) -> (crate::TunnelHandle, crate::TunnelStream) {
+    pub fn open_tunnel_stream(
+        self: &Arc<Self>,
+    ) -> (crate::TunnelHandle, crate::TunnelStream<Transport>) {
         crate::TunnelStream::open(self.clone())
     }
 
@@ -386,7 +388,7 @@ impl RpcSession {
     ///
     /// This registers the tunnel receiver immediately.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn tunnel_stream(self: &Arc<Self>, channel_id: u32) -> crate::TunnelStream {
+    pub fn tunnel_stream(self: &Arc<Self>, channel_id: u32) -> crate::TunnelStream<Transport> {
         crate::TunnelStream::new(self.clone(), channel_id)
     }
 
@@ -601,19 +603,19 @@ impl RpcSession {
         method_id: u32,
         payload: Vec<u8>,
     ) -> Result<ReceivedFrame, RpcError> {
-        struct PendingGuard<'a> {
-            session: &'a RpcSession,
+        struct PendingGuard<'a, Transport: TransportBackend> {
+            session: &'a RpcSession<Transport>,
             channel_id: u32,
             active: bool,
         }
 
-        impl<'a> PendingGuard<'a> {
+        impl<'a, Transport: TransportBackend> PendingGuard<'a, Transport> {
             fn disarm(&mut self) {
                 self.active = false;
             }
         }
 
-        impl Drop for PendingGuard<'_> {
+        impl<Transport: TransportBackend> Drop for PendingGuard<'_, Transport> {
             fn drop(&mut self) {
                 if !self.active {
                     return;

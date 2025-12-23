@@ -5,19 +5,15 @@
 //! trait. We use `enum_dispatch` to forward calls without handwritten `match`
 //! boilerplate.
 
-use enum_dispatch::enum_dispatch;
-
 use crate::{Frame, TransportError};
 
-#[enum_dispatch]
-pub(crate) trait TransportBackend: Send + Sync + Clone + 'static {
-    async fn send_frame(&self, frame: Frame) -> Result<(), TransportError>;
-    async fn recv_frame(&self) -> Result<Frame, TransportError>;
+pub trait TransportBackend: Send + Sync + Clone + 'static {
+    fn send_frame(&self, frame: Frame) -> impl Future<Output = Result<(), TransportError>> + Send;
+    fn recv_frame(&self) -> impl Future<Output = Result<Frame, TransportError>> + Send;
     fn close(&self);
     fn is_closed(&self) -> bool;
 }
 
-#[enum_dispatch(TransportBackend)]
 #[derive(Clone, Debug)]
 pub enum Transport {
     #[cfg(feature = "mem")]
@@ -30,23 +26,61 @@ pub enum Transport {
     WebSocket(websocket::WebSocketTransport),
 }
 
+impl TransportBackend for Transport {
+    async fn send_frame(&self, frame: Frame) -> Result<(), TransportError> {
+        match self {
+            #[cfg(feature = "mem")]
+            Transport::Mem(t) => t.send_frame(frame).await,
+            #[cfg(all(feature = "stream", not(target_arch = "wasm32")))]
+            Transport::Stream(t) => t.send_frame(frame).await,
+            #[cfg(all(feature = "shm", not(target_arch = "wasm32")))]
+            Transport::Shm(t) => t.send_frame(frame).await,
+            #[cfg(feature = "websocket")]
+            Transport::WebSocket(t) => t.send_frame(frame).await,
+        }
+    }
+
+    async fn recv_frame(&self) -> Result<Frame, TransportError> {
+        match self {
+            #[cfg(feature = "mem")]
+            Transport::Mem(t) => t.recv_frame().await,
+            #[cfg(all(feature = "stream", not(target_arch = "wasm32")))]
+            Transport::Stream(t) => t.recv_frame().await,
+            #[cfg(all(feature = "shm", not(target_arch = "wasm32")))]
+            Transport::Shm(t) => t.recv_frame().await,
+            #[cfg(feature = "websocket")]
+            Transport::WebSocket(t) => t.recv_frame().await,
+        }
+    }
+
+    fn close(&self) {
+        match self {
+            #[cfg(feature = "mem")]
+            Transport::Mem(t) => t.close(),
+            #[cfg(all(feature = "stream", not(target_arch = "wasm32")))]
+            Transport::Stream(t) => t.close(),
+            #[cfg(all(feature = "shm", not(target_arch = "wasm32")))]
+            Transport::Shm(t) => t.close(),
+            #[cfg(feature = "websocket")]
+            Transport::WebSocket(t) => t.close(),
+        }
+    }
+
+    fn is_closed(&self) -> bool {
+        match self {
+            #[cfg(feature = "mem")]
+            Transport::Mem(t) => t.is_closed(),
+            #[cfg(all(feature = "stream", not(target_arch = "wasm32")))]
+            Transport::Stream(t) => t.is_closed(),
+            #[cfg(all(feature = "shm", not(target_arch = "wasm32")))]
+            Transport::Shm(t) => t.is_closed(),
+            #[cfg(feature = "websocket")]
+            Transport::WebSocket(t) => t.is_closed(),
+        }
+    }
+}
+
 impl Transport {
-    pub async fn send_frame(&self, frame: Frame) -> Result<(), TransportError> {
-        TransportBackend::send_frame(self, frame).await
-    }
-
-    pub async fn recv_frame(&self) -> Result<Frame, TransportError> {
-        TransportBackend::recv_frame(self).await
-    }
-
-    pub fn close(&self) {
-        TransportBackend::close(self);
-    }
-
-    pub fn is_closed(&self) -> bool {
-        TransportBackend::is_closed(self)
-    }
-
     #[cfg(feature = "mem")]
     pub fn mem_pair() -> (Self, Self) {
         let (a, b) = mem::MemTransport::pair();

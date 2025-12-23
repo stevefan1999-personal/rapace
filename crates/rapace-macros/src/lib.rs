@@ -280,11 +280,11 @@ fn generate_service(input: &ParsedTrait) -> Result<TokenStream2, MacroError> {
         /// let client = FooClient::new(session);
         /// let result = client.some_method(args).await?;
         /// ```
-        #vis struct #client_name {
-            session: ::std::sync::Arc<::#rapace_crate::rapace_core::RpcSession>,
+        #vis struct #client_name<Transport: ::#rapace_crate::rapace_core::TransportBackend> {
+            session: ::std::sync::Arc<::#rapace_crate::rapace_core::RpcSession<Transport>>,
         }
 
-        impl #client_name {
+        impl<Transport: ::#rapace_crate::rapace_core::TransportBackend> #client_name<Transport> {
             /// Create a new client with the given RPC session.
             ///
             /// Uses compile-time, on-wire method IDs (hashed `Service.method`).
@@ -292,12 +292,12 @@ fn generate_service(input: &ParsedTrait) -> Result<TokenStream2, MacroError> {
             ///
             /// The provided session must be shared (`Arc::clone`) with the call site
             /// and have its demux loop (`tokio::spawn(session.clone().run())`) running.
-            pub fn new(session: ::std::sync::Arc<::#rapace_crate::rapace_core::RpcSession>) -> Self {
+            pub fn new(session: ::std::sync::Arc<::#rapace_crate::rapace_core::RpcSession<Transport>>) -> Self {
                 Self { session }
             }
 
             /// Get a reference to the underlying session.
-            pub fn session(&self) -> &::std::sync::Arc<::#rapace_crate::rapace_core::RpcSession> {
+            pub fn session(&self) -> &::std::sync::Arc<::#rapace_crate::rapace_core::RpcSession<Transport>> {
                 &self.session
             }
 
@@ -310,12 +310,12 @@ fn generate_service(input: &ParsedTrait) -> Result<TokenStream2, MacroError> {
         /// This can be useful when you want to validate the service/methods are registered
         /// (or when building tooling around introspection).
         /// It has the same [`RpcSession`](::#rapace_crate::rapace_core::RpcSession) requirements as [`#client_name`].
-        #vis struct #registry_client_name {
-            session: ::std::sync::Arc<::#rapace_crate::rapace_core::RpcSession>,
+        #vis struct #registry_client_name<Transport: ::#rapace_crate::rapace_core::TransportBackend> {
+            session: ::std::sync::Arc<::#rapace_crate::rapace_core::RpcSession<Transport>>,
             #(pub #method_id_fields,)*
         }
 
-        impl #registry_client_name {
+        impl<Transport: ::#rapace_crate::rapace_core::TransportBackend> #registry_client_name<Transport> {
             /// Create a new registry-aware client.
             ///
             /// Looks up method IDs from the registry. The service must be registered
@@ -326,7 +326,7 @@ fn generate_service(input: &ParsedTrait) -> Result<TokenStream2, MacroError> {
             /// # Panics
             ///
             /// Panics if the service or any of its methods are not found in the registry.
-            pub fn new(session: ::std::sync::Arc<::#rapace_crate::rapace_core::RpcSession>, registry: &::#rapace_crate::registry::ServiceRegistry) -> Self {
+            pub fn new(session: ::std::sync::Arc<::#rapace_crate::rapace_core::RpcSession<Transport>>, registry: &::#rapace_crate::registry::ServiceRegistry) -> Self {
                 Self {
                     session,
                     #(#method_id_lookups,)*
@@ -334,7 +334,7 @@ fn generate_service(input: &ParsedTrait) -> Result<TokenStream2, MacroError> {
             }
 
             /// Get a reference to the underlying session.
-            pub fn session(&self) -> &::std::sync::Arc<::#rapace_crate::rapace_core::RpcSession> {
+            pub fn session(&self) -> &::std::sync::Arc<::#rapace_crate::rapace_core::RpcSession<Transport>> {
                 &self.session
             }
 
@@ -388,7 +388,7 @@ fn generate_service(input: &ParsedTrait) -> Result<TokenStream2, MacroError> {
             /// ```
             pub async fn serve(
                 self,
-                transport: ::#rapace_crate::rapace_core::Transport,
+                transport: impl ::#rapace_crate::rapace_core::TransportBackend,
             ) -> ::std::result::Result<(), ::#rapace_crate::rapace_core::RpcError> {
                 ::#rapace_crate::tracing::debug!("serve: entering loop, waiting for requests");
                 loop {
@@ -465,7 +465,7 @@ fn generate_service(input: &ParsedTrait) -> Result<TokenStream2, MacroError> {
             /// individually.
             pub async fn serve_one(
                 &self,
-                transport: &#rapace_crate::rapace_core::Transport,
+                transport: &impl #rapace_crate::rapace_core::TransportBackend,
             ) -> ::std::result::Result<(), #rapace_crate::rapace_core::RpcError> {
                 // Receive next request frame
                 let request = transport.recv_frame().await
@@ -511,7 +511,7 @@ fn generate_service(input: &ParsedTrait) -> Result<TokenStream2, MacroError> {
                 method_id: u32,
                 channel_id: u32,
                 request_payload: &[u8],
-                transport: &#rapace_crate::rapace_core::Transport,
+                transport: &impl #rapace_crate::rapace_core::TransportBackend,
             ) -> ::std::result::Result<(), #rapace_crate::rapace_core::RpcError> {
                 #rapace_crate::tracing::debug!(method_id, channel_id, "dispatch_streaming: entered");
                 match method_id {
@@ -537,7 +537,7 @@ fn generate_service(input: &ParsedTrait) -> Result<TokenStream2, MacroError> {
             /// clients (they set `NO_REPLY` automatically).
             pub fn into_session_dispatcher(
                 self,
-                transport: ::#rapace_crate::rapace_core::Transport,
+                transport: impl ::#rapace_crate::rapace_core::TransportBackend,
             ) -> impl Fn(
                 ::#rapace_crate::rapace_core::Frame,
             ) -> ::std::pin::Pin<
