@@ -8,7 +8,12 @@ use std::pin::Pin;
 use std::sync::Arc;
 
 use rapace::TransportError;
+
+#[cfg(unix)]
 use rapace::transport::shm::ShmTransport;
+
+#[cfg(not(unix))]
+use rapace::transport::StreamTransport as ShmTransport;
 
 // Re-export common rapace types so macro-expanded code can refer to `$crate::...`
 // without requiring every cell crate to depend on `rapace` directly.
