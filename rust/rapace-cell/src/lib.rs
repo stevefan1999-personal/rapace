@@ -12,6 +12,12 @@ use rapace::TransportError;
 #[cfg(unix)]
 use rapace::transport::shm::ShmTransport;
 
+/// On non-Unix platforms there is no real shared-memory transport available.
+///
+/// We alias `StreamTransport` to `ShmTransport` purely so that type aliases such as
+/// [`CellSession`] remain available in generic code. SHM-specific APIs (for example
+/// methods like `hub_peer`) are only implemented on Unix and are always guarded by
+/// `cfg(unix)`, so they must not be used when building for non-Unix targets.
 #[cfg(not(unix))]
 use rapace::transport::StreamTransport as ShmTransport;
 
